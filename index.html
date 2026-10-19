@@ -139,6 +139,7 @@ dialog .tabs{display:flex; gap:6px; margin-bottom:8px}
   <label class="chk"><input type="checkbox" id="showGrid"> 格線 1 m</label>
   <label class="chk"><input type="checkbox" id="showClear" checked> 維修／操作空間</label>
   <label class="chk"><input type="checkbox" id="showLabels" checked> 標籤</label>
+  <label class="chk" title="平面圖透明度">底圖 <input type="range" id="planOp" min="10" max="100" value="100" style="width:80px"> <span id="planOpV">100%</span></label>
   <span class="sep"></span>
   <button id="zoomOut">−</button><button id="zoomIn">＋</button><button id="fit" title="0">全圖</button>
   <span class="grow"></span>
@@ -234,7 +235,7 @@ function selZone(){ return S.sel&&S.sel.t==='zone' ? S.zones.find(z=>z.id===S.se
 function render(){
   const r = svg.getBoundingClientRect(); const W=r.width, H=r.height; const s=S.s;
   const [pw,ph] = planCm(); const [ix,iy]=toScreen(0,0);
-  const im=$('planImg'); im.setAttribute('x',ix); im.setAttribute('y',iy); im.setAttribute('width',pw*s); im.setAttribute('height',ph*s);
+  const im=$('planImg'); im.setAttribute('x',ix); im.setAttribute('y',iy); im.setAttribute('width',pw*s); im.setAttribute('height',ph*s); im.setAttribute('opacity',(S.planOp??100)/100);
   let o = '';
   if($('showGrid').checked && s>0.08){ o+='<g stroke="#1aa3c7" stroke-opacity=".25" stroke-width="1">';
     for(let x=0;x<=pw;x+=100){const [sx]=toScreen(x,0); if(sx<0||sx>W) continue; o+=`<line x1="${sx}" y1="${iy}" x2="${sx}" y2="${iy+ph*s}"/>`;}
@@ -403,6 +404,8 @@ $('search').addEventListener('input',()=>renderPanel(new Set()));
 $('cAdd').onclick=()=>{ const n=$('cName').value.trim()||'物件', w=+$('cW').value, d=+$('cD').value; if(!(w>0&&d>0)){ toast('請輸入 W、D（mm）'); return; } addItem({key:'custom:'+n,name:n,short:n,cat:'custom',w,d}); };
 function centerOn(it){ if(!it) return; const r=svg.getBoundingClientRect(); const [sx,sy]=toScreen(it.x,it.y); if(sx<0||sx>r.width||sy<0||sy>r.height){ S.tx=r.width/2-it.x*S.s; S.ty=r.height/2-it.y*S.s; } }
 for(const id of ['snap','grid','showGrid','showClear','showLabels']) $(id).addEventListener('change',render);
+$('planOp').addEventListener('input',()=>{ S.planOp=+$('planOp').value; $('planOpV').textContent=S.planOp+'%'; render(); });
+function setPlanOp(v){ S.planOp=v; $('planOp').value=v; $('planOpV').textContent=v+'%'; }
 $('reset').onclick=()=>ask('清空所有已放置的機台與區域？（輸入 yes 確認）','',v=>{ if(v==='yes'){ S.items=[]; S.zones=[]; S.sel=null; render(); } });
 function ask(msg,def,cb){ $('askMsg').textContent=msg; $('askVal').value=def; $('askDlg').showModal(); $('askVal').focus(); $('askVal').select();
   $('askOk').onclick=()=>{ $('askDlg').close(); cb($('askVal').value); }; $('askCancel').onclick=()=>$('askDlg').close();
@@ -413,16 +416,16 @@ function layoutText(){ const L=[`億光大樓 4F 無塵室機台配置　${new D
   S.items.forEach((it,i)=>L.push(`${i+1}\t${it.full||it.name}\t${it.w}×${it.d}\t${Math.round(it.x)}\t${Math.round(it.y)}\t${it.a}\t${it.clr}\t${it.op||0}`));
   if(S.zones.length){ L.push('',`區域\t名稱\tClass\t外框 x,y (cm)\tW×H (cm)\t面積 (m²)\t區內機台`); S.zones.forEach((z,i)=>{ const b=zoneBox(z); L.push(`${i+1}\t${z.name}\t${z.cls||'-'}\t${Math.round(b.x)},${Math.round(b.y)}\t${Math.round(b.w)}×${Math.round(b.h)}\t${fmt(polyArea(z.pts)/1e4,2)}\t${S.items.filter(it=>inside(z.pts,it.x,it.y)).length}`); }); }
   L.push('',$('status').innerText.replace(/\n/g,'　')); return L.join('\n'); }
-function layoutJson(){ return JSON.stringify({v:1,cmPerPx:S.cmPerPx,nextId:S.nextId,items:S.items,zones:S.zones},null,1); }
+function layoutJson(){ return JSON.stringify({v:1,cmPerPx:S.cmPerPx,planOp:S.planOp??100,nextId:S.nextId,items:S.items,zones:S.zones},null,1); }
 function normZones(zs){ return (zs||[]).map(z=>{ if(!z.pts&&z.w!=null){ const {x,y,w,h}=z; z={...z,pts:[[x,y],[x+w,y],[x+w,y+h],[x,y+h]]}; } return z; }); }
-function loadJson(txt){ const o=typeof txt==='string'?JSON.parse(txt):JSON.parse(JSON.stringify(txt)); if(!o||!Array.isArray(o.items)) throw 0; S.items=o.items.map(i=>({op:0,...i})); S.zones=normZones(o.zones); S.nextId=o.nextId||(Math.max(0,...S.items.map(i=>i.id),...S.zones.map(z=>z.id))+1); if(o.cmPerPx) S.cmPerPx=o.cmPerPx; S.sel=null; render(); }
+function loadJson(txt){ const o=typeof txt==='string'?JSON.parse(txt):JSON.parse(JSON.stringify(txt)); if(!o||!Array.isArray(o.items)) throw 0; S.items=o.items.map(i=>({op:0,...i})); S.zones=normZones(o.zones); S.nextId=o.nextId||(Math.max(0,...S.items.map(i=>i.id),...S.zones.map(z=>z.id))+1); if(o.cmPerPx) S.cmPerPx=o.cmPerPx; if(o.planOp!=null) setPlanOp(o.planOp); S.sel=null; render(); }
 let dlgMode='text';
 function showDlg(m){ dlgMode=m; $('tabText').classList.toggle('on',m==='text'); $('tabJson').classList.toggle('on',m==='json'); $('dlgText').value = m==='text'?layoutText():layoutJson(); $('loadBtn').hidden = m!=='json'; $('dlgHint').textContent = m==='json'?'貼上先前複製的 JSON 後按「載入」。版面也會自動存在這個瀏覽器。':'可直接貼到 Excel / 文件。'; if(!$('dlg').open) $('dlg').showModal(); }
 $('export').onclick=()=>showDlg('text'); $('tabText').onclick=()=>showDlg('text'); $('tabJson').onclick=()=>showDlg('json'); $('dlgClose').onclick=()=>$('dlg').close();
 $('copyBtn').onclick=async()=>{ try{ await navigator.clipboard.writeText($('dlgText').value); $('dlgHint').textContent='已複製。'; }catch(_){ $('dlgText').select(); $('dlgHint').textContent='請手動 Ctrl+C 複製。'; } };
 $('loadBtn').onclick=()=>{ try{ loadJson($('dlgText').value); $('dlg').close(); toast('已載入版面'); }catch(_){ $('dlgHint').textContent='JSON 格式不正確。'; } };
 function save(){ try{ localStorage.setItem(STORE,layoutJson()); }catch(_){} }
-function restore(){ let ok=false; try{ const t=localStorage.getItem(STORE); if(t){ const o=JSON.parse(t); S.items=(o.items||[]).map(i=>({op:0,...i})); S.zones=normZones(o.zones); S.nextId=o.nextId||1; if(o.cmPerPx) S.cmPerPx=o.cmPerPx; ok=true; } }catch(_){}
+function restore(){ let ok=false; try{ const t=localStorage.getItem(STORE); if(t){ const o=JSON.parse(t); S.items=(o.items||[]).map(i=>({op:0,...i})); S.zones=normZones(o.zones); S.nextId=o.nextId||1; if(o.cmPerPx) S.cmPerPx=o.cmPerPx; if(o.planOp!=null) setPlanOp(o.planOp); ok=true; } }catch(_){}
   if(!ok){ try{ loadJson(PRESET); }catch(_){} } }
 $('preset').onclick=()=>ask('載入預設配置會覆蓋目前版面（輸入 yes 確認）','',v=>{ if(v==='yes'){ loadJson(PRESET); toast('已載入預設配置'); } });
 let toastT; function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2500); }
@@ -434,7 +437,7 @@ function printRegion(){ const ol=S.zones.find(z=>z.fill===false); const pts=ol?o
 function zoneOf(it){ const zs=S.zones.filter(z=>z.fill!==false&&inside(z.pts,it.x,it.y)).sort((a,b)=>polyArea(a.pts)-polyArea(b.pts)); return zs[0]?zs[0].name:''; }
 function printSvg(R,den){ const [pw,ph]=planCm(); const wmm=R.w*10/den, hmm=R.h*10/den; const F=den/100; // F: stroke/font factor so 1:100 → base sizes
   let o=`<svg xmlns="http://www.w3.org/2000/svg" width="${wmm}mm" height="${hmm}mm" viewBox="${R.x} ${R.y} ${R.w} ${R.h}"><defs><pattern id="phatch" width="${12*F}" height="${12*F}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${12*F}" stroke="#444" stroke-width="${2*F}"/></pattern><clipPath id="pclip"><rect x="${R.x}" y="${R.y}" width="${R.w}" height="${R.h}"/></clipPath></defs><g clip-path="url(#pclip)">`;
-  o+=`<image href="${PLAN.src}" x="0" y="0" width="${pw}" height="${ph}" preserveAspectRatio="none"/>`;
+  o+=`<image href="${PLAN.src}" x="0" y="0" width="${pw}" height="${ph}" preserveAspectRatio="none" opacity="${(S.planOp??100)/100}"/>`;
   for(const z of S.zones){ const col=z.color||'#1aa3c7'; const outline=z.fill===false; const minY=Math.min(...z.pts.map(p=>p[1])); const tl=z.pts.filter(p=>p[1]-minY<1).sort((a,b)=>a[0]-b[0])[0];
     o+=`<polygon points="${z.pts.map(p=>p.join(',')).join(' ')}" fill="${col}" fill-opacity="${outline?0:.10}" stroke="${col}" stroke-width="${(outline?6:3)*F}" stroke-dasharray="${outline?'':`${14*F} ${8*F}`}"/>`;
     o+=`<text x="${tl[0]+12*F}" y="${tl[1]+30*F}" font-size="${24*F}" font-weight="700" fill="${col}" stroke="#fff" stroke-width="${5*F}" paint-order="stroke" font-family="Noto Sans TC, IBM Plex Sans, sans-serif">${esc(z.name)}${z.cls?' · Class '+esc(z.cls):''} · ${fmt(polyArea(z.pts)/1e4,1)} m²</text>`; }
