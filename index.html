@@ -173,7 +173,7 @@ dialog .tabs{display:flex; gap:6px; margin-bottom:8px}
     </section>
   </aside>
   <section id="stage">
-    <svg id="svg" class="tool-select" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="#333" stroke-opacity=".35" stroke-width="1.5"/></pattern></defs><image id="planImg" preserveAspectRatio="none"/><g id="dyn"></g></svg>
+    <svg id="svg" class="tool-select" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="#333" stroke-opacity=".35" stroke-width="1.5"/></pattern></defs><rect id="planBg" fill="#fff"/><image id="planImg" preserveAspectRatio="none"/><g id="dyn"></g></svg>
     <div id="hud"><div id="scalebar"><div id="sbLabel">1 m</div><div class="bar" style="width:40px"></div></div><div id="cursorPos"></div></div>
     <div id="toast"></div>
   </section>
@@ -235,7 +235,7 @@ function selZone(){ return S.sel&&S.sel.t==='zone' ? S.zones.find(z=>z.id===S.se
 function render(){
   const r = svg.getBoundingClientRect(); const W=r.width, H=r.height; const s=S.s;
   const [pw,ph] = planCm(); const [ix,iy]=toScreen(0,0);
-  const im=$('planImg'); im.setAttribute('x',ix); im.setAttribute('y',iy); im.setAttribute('width',pw*s); im.setAttribute('height',ph*s); im.setAttribute('opacity',(S.planOp??100)/100);
+  const im=$('planImg'); im.setAttribute('x',ix); im.setAttribute('y',iy); im.setAttribute('width',pw*s); im.setAttribute('height',ph*s); im.setAttribute('opacity',(S.planOp??100)/100); const bg=$('planBg'); bg.setAttribute('x',ix); bg.setAttribute('y',iy); bg.setAttribute('width',pw*s); bg.setAttribute('height',ph*s);
   let o = '';
   if($('showGrid').checked && s>0.08){ o+='<g stroke="#1aa3c7" stroke-opacity=".25" stroke-width="1">';
     for(let x=0;x<=pw;x+=100){const [sx]=toScreen(x,0); if(sx<0||sx>W) continue; o+=`<line x1="${sx}" y1="${iy}" x2="${sx}" y2="${iy+ph*s}"/>`;}
