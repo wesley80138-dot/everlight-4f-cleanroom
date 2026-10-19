@@ -105,6 +105,24 @@ dialog .tabs{display:flex; gap:6px; margin-bottom:8px}
   #stage{order:1}
 }
 @media (prefers-reduced-motion: reduce){ #toast{transition:none} }
+#print{display:none}
+@media print{
+  @page{size:A3 landscape; margin:8mm}
+  html,body{height:auto; overflow:visible; background:#fff; color:#000}
+  body>*:not(#print){display:none !important}
+  #print{display:block; font-size:9pt; color:#000}
+  #print h1{font-size:13pt; margin:0 0 2mm; font-family:"Noto Sans TC","IBM Plex Sans",sans-serif}
+  #print .meta{display:flex; gap:8mm; margin-bottom:2mm; font-size:8.5pt}
+  #print .legend{display:flex; gap:5mm; align-items:center; font-size:8pt; margin-bottom:2mm}
+  #print .legend i{display:inline-block; width:4mm; height:3mm; margin-right:1mm; vertical-align:middle; border:0.2mm solid #333}
+  #print svg{display:block}
+  #print .pb{break-before:page}
+  #print table{border-collapse:collapse; width:100%; font-size:8pt; margin-top:2mm}
+  #print th,#print td{border:0.2mm solid #999; padding:0.6mm 1.5mm; text-align:left; vertical-align:top}
+  #print th{background:#eee}
+  #print td.n{text-align:right; font-variant-numeric:tabular-nums}
+  #print h2{font-size:11pt; margin:3mm 0 1mm}
+}
 </style>
 </head>
 <body>
@@ -126,6 +144,7 @@ dialog .tabs{display:flex; gap:6px; margin-bottom:8px}
   <span class="grow"></span>
   <button id="preset">預設配置</button>
   <button id="export">匯出 / 載入</button>
+  <button id="pdf" title="瀏覽器列印對話框中選「另存為 PDF」">輸出 PDF</button>
   <button id="reset" class="danger">清空</button>
   <span class="hint" id="hint">拖曳機台移動 · R 旋轉 90° · Delete 刪除 · Ctrl+D 複製 · 滾輪縮放 · 拖曳空白處平移 · 粗邊＝操作面</span>
 </header>
@@ -160,6 +179,7 @@ dialog .tabs{display:flex; gap:6px; margin-bottom:8px}
 </main>
 <footer id="status"></footer>
 
+<div id="print"></div>
 <dialog id="dlg">
   <div class="tabs"><button id="tabText" class="on">配置清單（文字）</button><button id="tabJson">JSON（存檔 / 載入）</button><span class="grow" style="flex:1"></span><button id="dlgClose">關閉</button></div>
   <textarea id="dlgText" spellcheck="false"></textarea>
@@ -406,6 +426,45 @@ function restore(){ let ok=false; try{ const t=localStorage.getItem(STORE); if(t
   if(!ok){ try{ loadJson(PRESET); }catch(_){} } }
 $('preset').onclick=()=>ask('載入預設配置會覆蓋目前版面（輸入 yes 確認）','',v=>{ if(v==='yes'){ loadJson(PRESET); toast('已載入預設配置'); } });
 let toastT; function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2500); }
+
+/* ---------- PDF / print ---------- */
+function printRegion(){ const ol=S.zones.find(z=>z.fill===false); const pts=ol?ol.pts:[...S.zones.flatMap(z=>z.pts), ...S.items.flatMap(i=>corners(i))];
+  if(!pts.length){ const [pw,ph]=planCm(); return {x:0,y:0,w:pw,h:ph}; } const xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]); const m=60;
+  return {x:Math.min(...xs)-m, y:Math.min(...ys)-m, w:Math.max(...xs)-Math.min(...xs)+2*m, h:Math.max(...ys)-Math.min(...ys)+2*m}; }
+function zoneOf(it){ const zs=S.zones.filter(z=>z.fill!==false&&inside(z.pts,it.x,it.y)).sort((a,b)=>polyArea(a.pts)-polyArea(b.pts)); return zs[0]?zs[0].name:''; }
+function printSvg(R,den){ const [pw,ph]=planCm(); const wmm=R.w*10/den, hmm=R.h*10/den; const F=den/100; // F: stroke/font factor so 1:100 → base sizes
+  let o=`<svg xmlns="http://www.w3.org/2000/svg" width="${wmm}mm" height="${hmm}mm" viewBox="${R.x} ${R.y} ${R.w} ${R.h}"><defs><pattern id="phatch" width="${12*F}" height="${12*F}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${12*F}" stroke="#444" stroke-width="${2*F}"/></pattern><clipPath id="pclip"><rect x="${R.x}" y="${R.y}" width="${R.w}" height="${R.h}"/></clipPath></defs><g clip-path="url(#pclip)">`;
+  o+=`<image href="${PLAN.src}" x="0" y="0" width="${pw}" height="${ph}" preserveAspectRatio="none"/>`;
+  for(const z of S.zones){ const col=z.color||'#1aa3c7'; const outline=z.fill===false; const minY=Math.min(...z.pts.map(p=>p[1])); const tl=z.pts.filter(p=>p[1]-minY<1).sort((a,b)=>a[0]-b[0])[0];
+    o+=`<polygon points="${z.pts.map(p=>p.join(',')).join(' ')}" fill="${col}" fill-opacity="${outline?0:.10}" stroke="${col}" stroke-width="${(outline?6:3)*F}" stroke-dasharray="${outline?'':`${14*F} ${8*F}`}"/>`;
+    o+=`<text x="${tl[0]+12*F}" y="${tl[1]+30*F}" font-size="${24*F}" font-weight="700" fill="${col}" stroke="#fff" stroke-width="${5*F}" paint-order="stroke" font-family="Noto Sans TC, IBM Plex Sans, sans-serif">${esc(z.name)}${z.cls?' · Class '+esc(z.cls):''} · ${fmt(polyArea(z.pts)/1e4,1)} m²</text>`; }
+  S.items.forEach((it,idx)=>{ const w=it.w/10, d=it.d/10, col=CAT[it.cat]?CAT[it.cat].hex:'#7a7d83'; const c=it.clr||0, f=Math.max(c,it.op||0);
+    o+=`<g transform="translate(${it.x},${it.y}) rotate(${it.a})">`;
+    if(c>0||it.op>0) o+=`<rect x="${-w/2-c}" y="${-d/2-c}" width="${w+2*c}" height="${d+c+f}" fill="${col}" fill-opacity=".05" stroke="${col}" stroke-width="${1.5*F}" stroke-dasharray="${8*F} ${6*F}"/>`;
+    if(it.op>0) o+=`<rect x="${-w/2}" y="${d/2}" width="${w}" height="${it.op}" fill="url(#phatch)"/>`;
+    o+=`<rect x="${-w/2}" y="${-d/2}" width="${w}" height="${d}" fill="${col}" fill-opacity=".45" stroke="#222" stroke-width="${2*F}"/><line x1="${-w/2}" y1="${d/2}" x2="${w/2}" y2="${d/2}" stroke="#111" stroke-width="${7*F}"/>`;
+    o+=`</g>`;
+    const big=Math.min(w,d)>60*F; const sc=corners(it); const bx=Math.min(...sc.map(p=>p[0])), by=Math.min(...sc.map(p=>p[1]));
+    if(big) o+=`<text x="${it.x}" y="${it.y-2*F}" text-anchor="middle" font-size="${22*F}" font-weight="700" fill="#111" font-family="Noto Sans TC, IBM Plex Sans, sans-serif">${esc(it.name)}</text><text x="${it.x}" y="${it.y+20*F}" text-anchor="middle" font-size="${17*F}" fill="#222">${it.w}×${it.d}</text>`;
+    const qx=big?bx+16*F:it.x, qy=big?by+16*F:it.y; o+=`<circle cx="${qx}" cy="${qy}" r="${15*F}" fill="#111"/><text x="${qx}" y="${qy+6*F}" text-anchor="middle" font-size="${17*F}" font-weight="700" fill="#fff">${idx+1}</text>`; });
+  // scale bar: 5 m
+  const sbx=R.x+R.w-560, sby=R.y+R.h-40; o+=`<rect x="${sbx}" y="${sby}" width="500" height="${10*F}" fill="#111"/><rect x="${sbx+250}" y="${sby}" width="250" height="${10*F}" fill="#fff" stroke="#111" stroke-width="${1.5*F}"/><text x="${sbx}" y="${sby-8*F}" font-size="${18*F}" fill="#111">0</text><text x="${sbx+500}" y="${sby-8*F}" font-size="${18*F}" fill="#111" text-anchor="end">5 m　1:${den}</text>`;
+  return o+'</g></svg>'; }
+function buildPrint(){ const R=printRegion(); const den=[50,100,200,500].find(d=>R.w*10/d<=400&&R.h*10/d<=272)||500; const L=S.items;
+  const legend=Object.keys(CAT).map(k=>`<span><i style="background:${CAT[k].hex}80"></i>${CAT[k].n}</span>`).join('')+`<span><i style="background:repeating-linear-gradient(45deg,#fff 0 1mm,#444 1mm 1.3mm)"></i>操作空間</span><span><i style="border-style:dashed"></i>維修間距</span><span>粗邊＝操作面</span>`;
+  const sum=k=>fmt(sumF(L,k),k==='kva'?1:0);
+  const rows=L.map((it,i)=>{ const s=EQUIP.find(e=>e.key===it.key)||{}; const ex=[['一般',s.exGen],['熱',s.exHot],['有機',s.exSolv],['酸鹼',s.exAcid],['PFC',s.exPfc]].filter(x=>x[1]).map(x=>x[0]+' '+x[1]).join('、');
+    return `<tr><td class="n">${i+1}</td><td>${esc(it.full||it.name)}</td><td class="n">${it.w}×${it.d}</td><td>${esc(zoneOf(it))}</td><td class="n">${Math.round(it.x)}, ${Math.round(it.y)}</td><td class="n">${it.a}</td><td class="n">${it.clr||0} / ${it.op||0}</td><td class="n">${s.kva??''}</td><td class="n">${s.cda??''}</td><td class="n">${s.n2??''}</td><td class="n">${s.diw??''}</td><td>${ex}</td><td>${esc(s.cls||'')}</td></tr>`; }).join('');
+  const zrows=S.zones.filter(z=>z.fill!==false).map((z,i)=>{ const ins=L.filter(it=>inside(z.pts,it.x,it.y)); const fp=ins.reduce((a,it)=>a+it.w*it.d/1e6,0); const A=polyArea(z.pts)/1e4;
+    return `<tr><td class="n">${i+1}</td><td>${esc(z.name)}</td><td>${esc(z.cls||'')}</td><td class="n">${fmt(A,1)}</td><td class="n">${ins.length}</td><td class="n">${fmt(fp,1)} (${fmt(100*fp/A,0)}%)</td><td class="n">${fmt(sumF(ins,'kva'),1)}</td><td class="n">${fmt(sumF(ins,'cda'),0)} / ${fmt(sumF(ins,'n2'),0)}</td></tr>`; }).join('');
+  const date=new Date().toLocaleDateString('zh-TW');
+  $('print').innerHTML=`<h1>億光大樓 4F 無塵室機台配置圖</h1><div class="meta"><span>國立台北科技大學</span><span>日期 ${date}</span><span>比例 1:${den}（A3 橫式，列印請選 100%／不縮放）</span><span>機台 ${L.filter(i=>i.cat!=='custom').length} 台</span><span>底圖：黃添盛建築師事務所 A01-03</span></div><div class="legend">${legend}</div>${printSvg(R,den)}
+  <div class="pb"></div><h1>機台清單</h1><div class="meta"><span>座標：機台中心，相對平面圖左上角 (cm)</span><span>角度順時針，0°＝操作面朝下</span></div>
+  <table><thead><tr><th>#</th><th>名稱</th><th>W×D (mm)</th><th>分區</th><th>x, y (cm)</th><th>角度</th><th>維修／操作 (cm)</th><th>kVA</th><th>CDA CFM</th><th>N2 LPM</th><th>DIW LPM</th><th>排氣 CMM</th><th>潔淨度需求</th></tr></thead><tbody>${rows}</tbody>
+  <tfoot><tr><th colspan="7">合計</th><th>${sum('kva')}</th><th>${sum('cda')}</th><th>${sum('n2')}</th><th>${sum('diw')}</th><th>一般 ${sum('exGen')}、熱 ${sum('exHot')}、有機 ${sum('exSolv')}、酸鹼 ${sum('exAcid')}、PFC ${sum('exPfc')}</th><th></th></tr></tfoot></table>
+  <h2>區域</h2><table><thead><tr><th>#</th><th>名稱</th><th>Class</th><th>面積 m²</th><th>機台數</th><th>機台佔地 m²</th><th>ΣkVA</th><th>CDA CFM / N2 LPM</th></tr></thead><tbody>${zrows}</tbody></table>`; }
+$('pdf').onclick=()=>{ buildPrint(); try{ window.print(); }catch(_){ toast('此環境無法開啟列印；請在 GitHub Pages 網址開啟後再按一次'); } };
+window.addEventListener('afterprint',()=>{ $('print').innerHTML=''; });
 
 /* ---------- init ---------- */
 $('planImg').setAttribute('href',PLAN.src); restore(); fit(); window.addEventListener('resize',()=>render()); if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>fit());
